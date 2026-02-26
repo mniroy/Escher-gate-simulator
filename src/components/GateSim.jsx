@@ -519,18 +519,29 @@ function GateAssembly({ openPercent, config, motor, overloaded, groupRef }) {
 
 /* ————— Camera Controllers ————— */
 function CamFit({ ctrlRef, gateRef, trigger }) {
-    const { camera } = useThree();
+    const { camera, size } = useThree();
     const anim = useRef(false);
     const tP = useRef(new THREE.Vector3());
     const tL = useRef(new THREE.Vector3());
-    const prev = useRef(0);
+    const prev = useRef(-1); // Start at -1 to trigger on trigger=0
+
     useFrame(() => {
         if (trigger > prev.current && gateRef.current && ctrlRef.current) {
             prev.current = trigger;
             const box = new THREE.Box3().setFromObject(gateRef.current);
             const c = box.getCenter(new THREE.Vector3());
             const s = box.getSize(new THREE.Vector3());
-            const d = (Math.max(s.x, s.y, s.z) / 2) / Math.tan((camera.fov * Math.PI / 180) / 2) * 1.6;
+            const aspect = size.width / size.height;
+
+            // Standard fitting based on fov (vertical)
+            let d = (Math.max(s.x, s.y, s.z) / 2) / Math.tan((camera.fov * Math.PI / 180) / 2) * 1.6;
+
+            // On mobile (portrait), aspect is < 1. Three.js FOV is vertical.
+            // If aspect < 1, we need to adjust distance for horizontal fit.
+            if (aspect < 1) {
+                d = d / aspect;
+            }
+
             tP.current.set(c.x, c.y + s.y * 0.3, c.z + d);
             tL.current.copy(c);
             anim.current = true;
@@ -546,7 +557,7 @@ function CamFit({ ctrlRef, gateRef, trigger }) {
 }
 
 function CamPreset({ ctrlRef, gateRef, cmd }) {
-    const { camera } = useThree();
+    const { camera, size } = useThree();
     const anim = useRef(false);
     const tP = useRef(new THREE.Vector3());
     const tL = useRef(new THREE.Vector3());
@@ -557,7 +568,11 @@ function CamPreset({ ctrlRef, gateRef, cmd }) {
             const box = new THREE.Box3().setFromObject(gateRef.current);
             const c = box.getCenter(new THREE.Vector3());
             const s = box.getSize(new THREE.Vector3());
-            const d = (Math.max(s.x, s.y, s.z) / 2) / Math.tan((camera.fov * Math.PI / 180) / 2) * 1.8;
+            const aspect = size.width / size.height;
+
+            let d = (Math.max(s.x, s.y, s.z) / 2) / Math.tan((camera.fov * Math.PI / 180) / 2) * 1.8;
+            if (aspect < 1) d = d / aspect;
+
             const v = cmd.split('-')[0];
             if (v === 'front') tP.current.set(c.x, c.y, c.z + d);
             else if (v === 'top') tP.current.set(c.x, c.y + d, c.z + 0.01);
