@@ -317,9 +317,11 @@ function PanelChain({ panels, panelW, height, thick, openPct, mirror, panelColor
                         <group position={[(panelW / 2) * sign, 0, 0]}>
                             <PanelMesh w={panelW} h={height} d={thick} color={panelColor} wireColor={wireColor} />
                             <PanelLabel text={labelText} position={[0, 0, thick / 2 + 0.05]} />
-                            {/* Wheel at the bottom of the folding panel */}
-                            <Wheel position={[0, -height / 2 - 0.04, 0]} />
                         </group>
+                        {/* Wheel stays on track: place at the end of the second panel in a fold pair */}
+                        {foldIndex % 2 === 0 && (
+                            <Wheel position={[panelW * sign, -height / 2 - 0.04, 0]} />
+                        )}
                         <group position={[panelW * sign, 0, 0]}>
                             {renderPanel(idx + 1)}
                         </group>
