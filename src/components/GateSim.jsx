@@ -69,6 +69,22 @@ function Hinge({ height, position }) {
     );
 }
 
+/* ————— Wheel (for folding panels on track) ————— */
+function Wheel({ position }) {
+    return (
+        <group position={position}>
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[0.04, 0.04, 0.02, 16]} />
+                <meshStandardMaterial color="#333" />
+            </mesh>
+            <mesh position={[0, 0.02, 0]}>
+                <boxGeometry args={[0.01, 0.05, 0.04]} />
+                <meshStandardMaterial color="#666" metalness={0.8} />
+            </mesh>
+        </group>
+    );
+}
+
 /* ————— Track Rail (for tracked bifold) ————— */
 function TrackRail({ width, yPos, mirror }) {
     const sign = mirror ? -1 : 1;
@@ -76,13 +92,13 @@ function TrackRail({ width, yPos, mirror }) {
         <group position={[0, yPos, 0]}>
             {/* Main rail beam */}
             <mesh position={[(width / 2) * sign, 0, 0]}>
-                <boxGeometry args={[width + 0.05, 0.03, 0.05]} />
-                <meshStandardMaterial color="#777" metalness={0.8} roughness={0.2} />
+                <boxGeometry args={[width + 0.12, 0.02, 0.06]} />
+                <meshStandardMaterial color="#555" metalness={0.8} roughness={0.2} />
             </mesh>
             {/* Rail groove line */}
-            <mesh position={[(width / 2) * sign, -0.02, 0]}>
-                <boxGeometry args={[width + 0.05, 0.005, 0.02]} />
-                <meshStandardMaterial color="#555" />
+            <mesh position={[(width / 2) * sign, 0.012, 0]}>
+                <boxGeometry args={[width + 0.12, 0.005, 0.02]} />
+                <meshStandardMaterial color="#222" />
             </mesh>
         </group>
     );
@@ -305,10 +321,6 @@ function PanelChain({ panels, panelW, height, thick, openPct, mirror, panelColor
             //
             // Max θ = 90° (π/2). At θ=90°, adjacent panels fold 180° (flat against each other).
             //
-            const trackedMax = Math.PI / 2; // 90° per-panel = 180° relative fold
-            const angleMult = foldIndex === 1 ? 1 : 2;
-            const foldAngle = effectiveT * trackedMax * angleMult * foldSign * sign * dirMultiplier;
-
             return (
                 <group key={idx}>
                     <Hinge height={height} position={[0, 0, 0]} />
@@ -316,6 +328,8 @@ function PanelChain({ panels, panelW, height, thick, openPct, mirror, panelColor
                         <group position={[(panelW / 2) * sign, 0, 0]}>
                             <PanelMesh w={panelW} h={height} d={thick} color={panelColor} wireColor={wireColor} />
                             <PanelLabel text={labelText} position={[0, 0, thick / 2 + 0.05]} />
+                            {/* Wheel at the bottom of the folding panel */}
+                            <Wheel position={[0, -height / 2 - 0.04, 0]} />
                         </group>
                         <group position={[panelW * sign, 0, 0]}>
                             {renderPanel(idx + 1)}
@@ -452,9 +466,9 @@ function GateAssembly({ openPercent, config, motor, overloaded, groupRef }) {
                     <boxGeometry args={[POST_W, H + 0.3, POST_W]} />
                     <meshStandardMaterial color={postColor} />
                 </mesh>
-                {/* Track rail at top if any fold panel has tracked=true */}
+                {/* Track rail at bottom if any fold panel has tracked=true */}
                 {leftHasTracked && (
-                    <TrackRail width={leftW} yPos={H / 2 + 0.025} mirror={false} />
+                    <TrackRail width={leftW} yPos={-H / 2 - 0.08} mirror={false} />
                 )}
                 <PanelChain
                     panels={left.panels} panelW={leftPanelW} height={H} thick={thick}
@@ -485,7 +499,7 @@ function GateAssembly({ openPercent, config, motor, overloaded, groupRef }) {
                     <meshStandardMaterial color={postColor} />
                 </mesh>
                 {rightHasTracked && (
-                    <TrackRail width={rightW} yPos={H / 2 + 0.025} mirror={true} />
+                    <TrackRail width={rightW} yPos={-H / 2 - 0.08} mirror={true} />
                 )}
                 <PanelChain
                     panels={right.panels} panelW={rightPanelW} height={H} thick={thick}

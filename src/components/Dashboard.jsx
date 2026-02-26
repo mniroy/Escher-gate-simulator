@@ -507,6 +507,10 @@ export default function Dashboard() {
             <input type="number" name="totalWidth" value={pendingConfig.totalWidth} onChange={handleTopChange} step="100" />
           </div>
           <div className="input-group" style={{ opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
+            <label>Gate Height (mm)</label>
+            <input type="number" name="height" value={pendingConfig.height} onChange={handleTopChange} step="100" />
+          </div>
+          <div className="input-group" style={{ opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
             <label>
               <span>Width Split</span>
               <span>{Math.round(pendingConfig.splitRatio * 100)}% / {Math.round((1 - pendingConfig.splitRatio) * 100)}%</span>
