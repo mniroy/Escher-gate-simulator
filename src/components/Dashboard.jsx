@@ -114,15 +114,12 @@ export default function Dashboard() {
     localStorage.setItem('gatesim_last_percent', openPercent);
   }, [openPercent]);
 
-  // Animation logic
+  // Animation logic for looping
   useEffect(() => {
     if (isPlaying) {
       playTimerRef.current = setInterval(() => {
         setOpenPercent((prev) => {
-          if (prev >= 100) {
-            setIsPlaying(false);
-            return 100;
-          }
+          if (prev >= 100) return 0; // LOOP: Reset to closed and keep playing
           return Math.min(100, prev + 1);
         });
       }, 30);
@@ -594,18 +591,6 @@ export default function Dashboard() {
                 }}
               >
                 {isPlaying ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-              </button>
-
-              <button
-                onClick={() => { setOpenPercent(0); setIsPlaying(false); }}
-                style={{
-                  width: '40px', height: '40px', borderRadius: '50%',
-                  backgroundColor: 'white', color: 'var(--text-muted)',
-                  border: '1px solid var(--border-color)', cursor: 'pointer', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center'
-                }}
-              >
-                <RotateCcw size={18} />
               </button>
 
               <div style={{ flex: 1, position: 'relative' }}>
