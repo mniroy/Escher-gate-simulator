@@ -170,7 +170,8 @@ export default function Dashboard() {
       }
     } catch (e) {
       console.error('Sharing failed', e);
-      alert('Could not save to database. Check if the table "gate_configs" exists in Supabase.');
+      const detailed = `${e.message || 'Error'}${e.hint ? `\nHint: ${e.hint}` : ''}${e.details ? `\nDetails: ${e.details}` : ''}`;
+      alert(`Could not save to database: ${detailed}`);
     } finally {
       setIsSharing(false);
     }
