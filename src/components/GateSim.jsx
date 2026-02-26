@@ -306,21 +306,10 @@ function PanelChain({ panels, panelW, height, thick, openPct, mirror, panelColor
         const foldSign = foldIndex % 2 === 1 ? 1 : -1;
 
         if (isTracked) {
-            // ═══ TRACKED BIFOLD KINEMATICS ═══
-            // Real bifold constraint: the far end of the last panel rides the track (Z=0).
-            //
-            // In the recursive Three.js transform chain, rotations accumulate:
-            //   P1 world rotation = P1_local
-            //   P2 world rotation = P1_local + P2_local
-            //
-            // Track constraint requires:
-            //   P1 world = +θ   →  P1_local = +θ
-            //   P2 world = -θ   →  P2_local = -θ - θ = -2θ
-            //   P3 world = +θ   →  P3_local = +θ - (-θ) = +2θ
-            //   (alternating, subsequent panels need 2× local angle)
-            //
-            // Max θ = 90° (π/2). At θ=90°, adjacent panels fold 180° (flat against each other).
-            //
+            const trackedMax = Math.PI / 2;
+            const angleMult = foldIndex === 1 ? 1 : 2;
+            const foldAngle = effectiveT * trackedMax * angleMult * foldSign * sign * dirMultiplier;
+
             return (
                 <group key={idx}>
                     <Hinge height={height} position={[0, 0, 0]} />
