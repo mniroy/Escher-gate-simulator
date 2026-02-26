@@ -389,3 +389,28 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
 }
+/* Read-only feedback */
+.input-group.readonly {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.side-card.readonly {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.share-success {
+  background-color: var(--success) !important;
+  color: white !important;
+}
+
+@keyframes pulse-success {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.button-pulse {
+  animation: pulse-success 0.3s ease-in-out;
+}

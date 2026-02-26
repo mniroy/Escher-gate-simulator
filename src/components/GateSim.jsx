@@ -97,11 +97,11 @@ function Actuator({ position, postA, postB, gateB, angle, color, sign = 1, panel
     const effectivePostB = postB * zMult;
 
     // Point A: Fixed post bracket pivot.
-    const a = new THREE.Vector3(-postA * sign, 0, effectivePostB);
+    const pivotAX = -postA * sign;
+    const pivotBX = gateB;
 
-    // Point B: Gate bracket pivot on the panel.
-    const b = new THREE.Vector3(gateB * sign, 0, effectiveZDepth);
-    b.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+    const a = new THREE.Vector3(pivotAX, 0, effectivePostB);
+    const b = new THREE.Vector3(pivotBX, 0, effectiveZDepth).applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
 
     const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
     const len = a.distanceTo(b);
@@ -113,9 +113,7 @@ function Actuator({ position, postA, postB, gateB, angle, color, sign = 1, panel
 
     const innerLen = len * 0.55;
     const outerLen = len * 0.55;
-    const bk = 0.025;
     const postSurfaceZ = (POST_W / 2) * zMult;
-    const bracketLenZ = Math.abs(effectivePostB - postSurfaceZ);
     const postSideX = (POST_W / 2) * -sign;
 
     return (
@@ -130,14 +128,14 @@ function Actuator({ position, postA, postB, gateB, angle, color, sign = 1, panel
                 <boxGeometry args={[Math.abs(a.x - postSideX), 0.04, 0.02]} />
                 <meshStandardMaterial color="#444" metalness={0.7} roughness={0.3} />
             </mesh>
-            {/* Post bracket arm (depth) */}
-            <mesh position={[-postA * sign, 0, (postSurfaceZ + effectivePostB) / 2]}>
-                <boxGeometry args={[0.04, 0.04, bracketLenZ]} />
+            {/* Post bracket arm (depth connection) */}
+            <mesh position={[a.x, 0, (postSurfaceZ + a.z) / 2]}>
+                <boxGeometry args={[0.04, 0.04, Math.abs(a.z - postSurfaceZ)]} />
                 <meshStandardMaterial color="#555" metalness={0.6} roughness={0.4} />
             </mesh>
             {/* Panel bracket arm (rotates with panel) */}
             <group rotation={[0, angle, 0]}>
-                <mesh position={[gateB * sign, 0, effectiveZDepth / 2]}>
+                <mesh position={[gateB, 0, effectiveZDepth / 2]}>
                     <boxGeometry args={[0.04, 0.04, Math.abs(effectiveZDepth)]} />
                     <meshStandardMaterial color="#555" metalness={0.6} roughness={0.4} />
                 </mesh>
@@ -147,8 +145,8 @@ function Actuator({ position, postA, postB, gateB, angle, color, sign = 1, panel
             <mesh position={b}><sphereGeometry args={[0.022, 12, 12]} /><meshStandardMaterial color="#222" metalness={0.8} roughness={0.2} /></mesh>
             {/* Actuator body */}
             <group position={mid} quaternion={q}>
-                {/* Motor Housing */}
-                <mesh position={[0, len * 0.35, 0]}>
+                {/* Motor Housing (Rear side) */}
+                <mesh position={[0, -len * 0.35, 0]}>
                     <boxGeometry args={[0.06, 0.12, 0.06]} />
                     <meshStandardMaterial color="#222" metalness={0.5} roughness={0.5} />
                 </mesh>
@@ -403,12 +401,20 @@ function GateAssembly({ openPercent, config, motor, overloaded, groupRef }) {
     // Auto-calculate actuator A/B/C per BFT standards
     const calcActGeom = (leaf, panelWm) => {
         const pw = panelWm * 1000;
-        const postA = 180 / 1000;
-        const postB = 180 / 1000;
+        const p0 = leaf.panels[0];
+
+        let postA = 180 / 1000;
+        let postB = 180 / 1000;
+
+        // Specialized mounting for outward folding with inside actuator
+        if (p0?.type === 'Fold' && p0?.dir === 'Outward' && leaf.actuator?.placement === 'Inside') {
+            postA = 220 / 1000;
+            postB = 300 / 1000;
+        }
+
         const gateB = Math.round(Math.max(250, Math.min(600, pw * 0.25))) / 1000;
 
         // Calculate stroke for the label
-        const p0 = leaf.panels[0];
         let maxDeg = 0;
         if (p0?.type === 'Swing') maxDeg = 90;
         else if (p0?.type === 'Fold') maxDeg = p0.tracked ? 90 : 80;

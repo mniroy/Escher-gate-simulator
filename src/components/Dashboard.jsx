@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Settings, Sliders, FileText, X, Check, Zap, Plus, Trash2, Save, FolderOpen } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Settings, Sliders, FileText, X, Check, Zap, Plus, Trash2, Save, FolderOpen, Share2, Copy, ExternalLink, Shield, Loader2 } from 'lucide-react';
 import GateSim from './GateSim';
+import { supabase } from '../lib/supabase';
 
 const PANEL_TYPES = ['None', 'Fold', 'Swing', 'Slide'];
 
@@ -31,7 +32,90 @@ export default function Dashboard() {
   const [pendingConfig, setPendingConfig] = useState(JSON.parse(JSON.stringify(config)));
   const [isDirty, setIsDirty] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [isReadOnly, setIsReadOnly] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Load state on mount: URL (Database ID or Base64) takes priority, then LocalStorage
+  useEffect(() => {
+    const fetchSharedConfig = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const sharedId = params.get('id');
+      const sharedBase64 = params.get('c');
+
+      if (sharedId) {
+        setIsLoading(true);
+        try {
+          const { data, error } = await supabase
+            .from('gate_configs')
+            .select('*')
+            .eq('id', sharedId)
+            .single();
+
+          if (data) {
+            setConfig(data.config);
+            setPendingConfig(JSON.parse(JSON.stringify(data.config)));
+            if (data.open_percent !== undefined) setOpenPercent(data.open_percent);
+            setIsReadOnly(true);
+          }
+        } catch (e) {
+          console.error('Failed to fetch from DB', e);
+        } finally {
+          setIsLoading(false);
+        }
+      } else if (sharedBase64) {
+        // Fallback for legacy Base64 links
+        try {
+          const decodedStr = decodeURIComponent(escape(atob(decodeURIComponent(sharedBase64))));
+          const payload = JSON.parse(decodedStr);
+          if (payload.config) {
+            setConfig(payload.config);
+            setPendingConfig(JSON.parse(JSON.stringify(payload.config)));
+            if (payload.openPercent !== undefined) setOpenPercent(payload.openPercent);
+            setIsReadOnly(true);
+          }
+        } catch (e) {
+          console.error('Failed to parse legacy shared config', e);
+        }
+      } else {
+        // If no shared link, load from local storage
+        const savedConfig = localStorage.getItem('gatesim_last_config');
+        if (savedConfig) {
+          try {
+            const parsed = JSON.parse(savedConfig);
+            setConfig(parsed);
+            setPendingConfig(JSON.parse(JSON.stringify(parsed)));
+          } catch (e) { }
+        }
+        const savedPct = localStorage.getItem('gatesim_last_percent');
+        if (savedPct !== null) setOpenPercent(Number(savedPct));
+      }
+    };
+
+    fetchSharedConfig();
+  }, []);
+
+  // Persist changes to LocalStorage
+  useEffect(() => {
+    if (!isReadOnly) {
+      localStorage.setItem('gatesim_last_config', JSON.stringify(config));
+    }
+  }, [config, isReadOnly]);
+
+  useEffect(() => {
+    localStorage.setItem('gatesim_last_percent', openPercent);
+  }, [openPercent]);
+
+  const exitReadOnly = () => {
+    setIsReadOnly(false);
+    // Remove the shared link from URL so refresh doesn't reset state
+    const url = new URL(window.location.href);
+    url.searchParams.delete('id');
+    url.searchParams.delete('c');
+    window.history.replaceState({}, '', url.toString());
+  };
 
   const checkDirty = (next) => setIsDirty(JSON.stringify(next) !== JSON.stringify(config));
 
@@ -50,6 +134,38 @@ export default function Dashboard() {
     a.download = `gatesim-${ts}.gatesim`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const shareConfig = async () => {
+    setIsSharing(true);
+    try {
+      // Save to database
+      const { data, error } = await supabase
+        .from('gate_configs')
+        .insert({
+          config,
+          open_percent: openPercent
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('id', data.id);
+        url.searchParams.delete('c'); // Cleanup legacy param if exists
+
+        await navigator.clipboard.writeText(url.toString());
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 2000);
+      }
+    } catch (e) {
+      console.error('Sharing failed', e);
+      alert('Could not save to database. Check if the table "gate_configs" exists in Supabase.');
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   const openConfig = (e) => {
@@ -153,9 +269,15 @@ export default function Dashboard() {
       const panelW = leafWidthMm / leaf.panels.length;
 
       // Auto-calculate A, B, C per typical BFT standards
-      const aOff = 180;  // Post offset A (X-axis into the post)
-      const bOff = 180;  // Post offset B (Z-axis inward)
+      let aOff = 180;  // Post offset A (X-axis into the post)
+      let bOff = 180;  // Post offset B (Z-axis inward)
       const gateB = Math.round(Math.max(250, Math.min(600, panelW * 0.25))); // distance along gate
+
+      // Specialized mounting for outward folding with inside actuator
+      if (p0?.type === 'Fold' && p0?.dir === 'Outward' && leaf.actuator?.placement === 'Inside') {
+        aOff = 220;
+        bOff = 300;
+      }
 
       // Max angle of first panel
       let maxAngleDeg = 0;
@@ -182,17 +304,19 @@ export default function Dashboard() {
       const stroke = maxLen - minLen;
 
       return {
-        aOff, bOff, gateB,
+        postA: aOff,
+        postB: bOff,
+        gateB,
         stroke: Math.round(stroke * 1000),
-        minLength: Math.round(minLen * 1000),
-        maxLength: Math.round(maxLen * 1000),
+        retracted: Math.round(minLen * 1000),
+        extended: Math.round(maxLen * 1000),
         maxAngleDeg,
       };
     };
-    const leftW = config.totalWidth * config.splitRatio;
-    const rightW = config.totalWidth * (1 - config.splitRatio);
-    return { left: calc(config.left, leftW), right: calc(config.right, rightW) };
-  }, [config]);
+    const leftW = pendingConfig.totalWidth * pendingConfig.splitRatio;
+    const rightW = pendingConfig.totalWidth * (1 - pendingConfig.splitRatio);
+    return { left: calc(pendingConfig.left, leftW), right: calc(pendingConfig.right, rightW) };
+  }, [pendingConfig]);
 
   const subOptStyle = {
     display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '22px',
@@ -287,12 +411,12 @@ export default function Dashboard() {
         <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)', marginBottom: '4px' }}>
           {label} Actuator
         </div>
-        <div className="ai-item"><span>Post bracket A:</span> <strong>{specs.aOff} mm</strong></div>
-        <div className="ai-item"><span>Post bracket B:</span> <strong>{specs.bOff} mm</strong></div>
+        <div className="ai-item"><span>Post bracket A:</span> <strong>{specs.postA} mm</strong></div>
+        <div className="ai-item"><span>Post bracket B:</span> <strong>{specs.postB} mm</strong></div>
         <div className="ai-item"><span>Gate bracket:</span> <strong>{specs.gateB} mm</strong></div>
         <div className="ai-item"><span>Stroke:</span> <strong>{specs.stroke} mm</strong></div>
-        <div className="ai-item"><span>Retracted:</span> <strong>{specs.minLength} mm</strong></div>
-        <div className="ai-item"><span>Extended:</span> <strong>{specs.maxLength} mm</strong></div>
+        <div className="ai-item"><span>Retracted:</span> <strong>{specs.retracted} mm</strong></div>
+        <div className="ai-item"><span>Extended:</span> <strong>{specs.extended} mm</strong></div>
         <div className="ai-item"><span>Travel angle:</span> <strong>{specs.maxAngleDeg}°</strong></div>
       </div>
     );
@@ -300,6 +424,17 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-container">
+      {isLoading && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(255,255,255,0.8)', zIndex: 1000,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: '12px', backdropFilter: 'blur(4px)'
+        }}>
+          <Loader2 size={48} className="button-pulse" style={{ color: 'var(--blueprint)' }} />
+          <div style={{ fontWeight: 600, color: 'var(--blueprint)', letterSpacing: '1px' }}>LOADING CONFIGURATION...</div>
+        </div>
+      )}
       <aside className="sidebar">
         <div className="sidebar-header">
           <Settings size={24} style={{ color: 'var(--blueprint)' }} />
@@ -313,10 +448,38 @@ export default function Dashboard() {
               style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '5px', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
               <Save size={16} />
             </button>
+            <button onClick={shareConfig} title="Copy publish link"
+              disabled={isSharing}
+              className={shareSuccess ? 'share-success button-pulse' : ''}
+              style={{
+                background: 'none',
+                border: '1px solid var(--border-color)',
+                borderRadius: '4px',
+                padding: '5px',
+                cursor: 'pointer',
+                color: 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                transition: 'all 0.2s',
+                opacity: isSharing ? 0.5 : 1
+              }}>
+              {isSharing ? <Loader2 size={16} className="button-pulse" /> : <Share2 size={16} />}
+            </button>
           </div>
           <input ref={fileInputRef} type="file" accept=".gatesim,.json" onChange={openConfig}
             style={{ display: 'none' }} />
         </div>
+
+        {isReadOnly && (
+          <div style={{ padding: '0.75rem 1.5rem', background: 'rgba(176, 137, 104, 0.1)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Shield size={16} style={{ color: 'var(--accent)' }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent)' }}>VIEW ONLY MODE</div>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Configuration is locked by the shared link.</div>
+            </div>
+            <button onClick={exitReadOnly} style={{ background: 'none', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: '0.6rem', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer' }}>Edit</button>
+          </div>
+        )}
 
         <div className="sidebar-section">
           <h2><Sliders size={16} /> Operation</h2>
@@ -331,11 +494,11 @@ export default function Dashboard() {
 
         <div className="sidebar-section">
           <h2>Geometry</h2>
-          <div className="input-group">
+          <div className="input-group" style={{ opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
             <label>Total Width (mm)</label>
             <input type="number" name="totalWidth" value={pendingConfig.totalWidth} onChange={handleTopChange} step="100" />
           </div>
-          <div className="input-group">
+          <div className="input-group" style={{ opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
             <label>
               <span>Width Split</span>
               <span>{Math.round(pendingConfig.splitRatio * 100)}% / {Math.round((1 - pendingConfig.splitRatio) * 100)}%</span>
@@ -343,7 +506,7 @@ export default function Dashboard() {
             <input type="range" min="0.1" max="0.9" step="0.05" name="splitRatio" value={pendingConfig.splitRatio} onChange={handleTopChange} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '0.75rem', opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
             <div className="side-card">
               <span className="side-tag">Left Leaf</span>
               {renderPanelList('left', pendingConfig.left)}
@@ -371,9 +534,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div style={{ padding: '1.25rem', marginTop: 'auto', borderTop: '1px solid var(--border-color)', background: '#fff', display: 'flex', gap: '8px' }}>
-          <button onClick={handleApply} disabled={!isDirty} className="export-btn"
-            style={{ flex: 1, backgroundColor: isDirty ? 'var(--success)' : 'var(--border-color)', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <div style={{ padding: '1.25rem', marginTop: 'auto', borderTop: '1px solid var(--border-color)', background: '#fff', display: 'flex', gap: '8px', opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
+          <button onClick={handleApply} disabled={!isDirty || isReadOnly} className="export-btn"
+            style={{ flex: 1, backgroundColor: (isDirty && !isReadOnly) ? 'var(--success)' : 'var(--border-color)', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             <Check size={18} /> Apply
           </button>
           <button className="export-btn" onClick={() => setShowModal(true)}
