@@ -46,6 +46,10 @@ export default function Dashboard() {
       const sharedBase64 = params.get('c');
 
       if (sharedId) {
+        if (!supabase) {
+          console.error('Supabase client not initialized. Check your environment variables.');
+          return;
+        }
         setIsLoading(true);
         try {
           const { data, error } = await supabase
@@ -137,6 +141,10 @@ export default function Dashboard() {
   };
 
   const shareConfig = async () => {
+    if (!supabase) {
+      alert('Sharing is currently unavailable. Supabase configuration is missing.');
+      return;
+    }
     setIsSharing(true);
     try {
       // Save to database
