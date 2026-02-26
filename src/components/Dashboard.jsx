@@ -558,22 +558,33 @@ export default function Dashboard() {
         </aside>
       )}
 
-      <main className="main-content" style={{ paddingLeft: isReadOnly ? 0 : 'var(--sidebar-width)' }}>
-        <div className="canvas-container">
+      <main className="main-content" style={{ paddingLeft: isReadOnly ? 0 : 'var(--sidebar-width)', width: '100%', height: '100%', position: 'relative' }}>
+        <div className="canvas-container" style={{ width: '100%', height: '100%' }}>
           <GateSim openPercent={openPercent} config={config}
             motor={{ aOffset: 150, bOffset: 150 }} overloaded={false} />
         </div>
 
         {isReadOnly && (
-          <div style={{
-            position: 'absolute', bottom: '30px', left: '50%', transform: 'translateX(-50%)',
-            width: '90%', maxWidth: '600px', background: 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(10px)', borderRadius: '16px', padding: '20px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.15)', border: '1px solid rgba(0,0,0,0.05)',
-            display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 100
+          <div className="playback-bar" style={{
+            position: 'absolute',
+            bottom: '30px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '90%',
+            maxWidth: '600px',
+            background: 'white',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            zIndex: 100
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
               <button
+                className="player-btn"
                 onClick={() => setIsPlaying(!isPlaying)}
                 style={{
                   width: '44px', height: '44px', borderRadius: '50%',
@@ -616,6 +627,7 @@ export default function Dashboard() {
 
               <button
                 onClick={exitReadOnly}
+                className="edit-btn"
                 style={{
                   padding: '8px 16px', borderRadius: '8px',
                   backgroundColor: 'white', color: 'var(--text-muted)',
