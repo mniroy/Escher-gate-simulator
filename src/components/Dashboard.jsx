@@ -624,19 +624,6 @@ export default function Dashboard() {
                   style={{ width: '100%', accentColor: 'var(--blueprint)', height: '6px', cursor: 'pointer' }}
                 />
               </div>
-
-              <button
-                onClick={exitReadOnly}
-                className="edit-btn"
-                style={{
-                  padding: '8px 16px', borderRadius: '8px',
-                  backgroundColor: 'white', color: 'var(--text-muted)',
-                  border: '1px solid var(--border-color)', cursor: 'pointer',
-                  fontSize: '0.75rem', fontWeight: 600
-                }}
-              >
-                EDIT
-              </button>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', fontSize: '0.65rem', color: 'var(--text-muted)', borderTop: '1px solid #f0f0f0', paddingTop: '10px' }}>
