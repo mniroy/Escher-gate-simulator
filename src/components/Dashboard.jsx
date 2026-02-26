@@ -153,8 +153,8 @@ export default function Dashboard() {
       const panelW = leafWidthMm / leaf.panels.length;
 
       // Auto-calculate A, B, C per typical BFT standards
-      const aOff = 160;  // Post offset A (X-axis into the post)
-      const bOff = 160;  // Post offset B (Z-axis inward)
+      const aOff = 180;  // Post offset A (X-axis into the post)
+      const bOff = 180;  // Post offset B (Z-axis inward)
       const gateB = Math.round(Math.max(250, Math.min(600, panelW * 0.25))); // distance along gate
 
       // Max angle of first panel
