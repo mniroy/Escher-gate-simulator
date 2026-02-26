@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Settings, Sliders, FileText, X, Check, Zap, Plus, Trash2, Save, FolderOpen, Share2, Copy, ExternalLink, Shield, Loader2 } from 'lucide-react';
+import { Settings, Sliders, FileText, X, Check, Zap, Plus, Trash2, Save, FolderOpen, Share2, Copy, ExternalLink, Shield, Loader2, Play, Square, RotateCcw } from 'lucide-react';
 import GateSim from './GateSim';
 import { supabase } from '../lib/supabase';
 
@@ -36,6 +36,8 @@ export default function Dashboard() {
   const [shareSuccess, setShareSuccess] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const playTimerRef = useRef(null);
   const fileInputRef = useRef(null);
 
   // Load state on mount: URL (Database ID or Base64) takes priority, then LocalStorage
@@ -111,6 +113,24 @@ export default function Dashboard() {
   useEffect(() => {
     localStorage.setItem('gatesim_last_percent', openPercent);
   }, [openPercent]);
+
+  // Animation logic
+  useEffect(() => {
+    if (isPlaying) {
+      playTimerRef.current = setInterval(() => {
+        setOpenPercent((prev) => {
+          if (prev >= 100) {
+            setIsPlaying(false);
+            return 100;
+          }
+          return Math.min(100, prev + 1);
+        });
+      }, 30);
+    } else {
+      clearInterval(playTimerRef.current);
+    }
+    return () => clearInterval(playTimerRef.current);
+  }, [isPlaying]);
 
   const exitReadOnly = () => {
     setIsReadOnly(false);
@@ -277,33 +297,26 @@ export default function Dashboard() {
       const p0 = leaf.panels[0];
       const panelW = leafWidthMm / leaf.panels.length;
 
-      // Auto-calculate A, B, C per typical BFT standards
-      let aOff = 180;  // Post offset A (X-axis into the post)
-      let bOff = 180;  // Post offset B (Z-axis inward)
-      const gateB = Math.round(Math.max(250, Math.min(600, panelW * 0.25))); // distance along gate
+      let aOff = 180;
+      let bOff = 180;
+      const gateB = Math.round(Math.max(250, Math.min(600, panelW * 0.25)));
 
-      // Specialized mounting for outward folding with inside actuator
       if (p0?.type === 'Fold' && p0?.dir === 'Outward' && leaf.actuator?.placement === 'Inside') {
         aOff = 220;
         bOff = 300;
       }
 
-      // Max angle of first panel
       let maxAngleDeg = 0;
       if (p0.type === 'Swing') maxAngleDeg = 90;
       else if (p0.type === 'Fold') maxAngleDeg = p0.tracked ? 90 : 80;
 
       const maxAngleRad = (maxAngleDeg * Math.PI) / 180;
-
-      const zD = 0.09; // approximate panel thickness + clearance
+      const zD = 0.09;
       const pA = aOff / 1000;
       const pB = bOff / 1000;
       const gB = gateB / 1000;
 
-      // Gate closed (0 deg). A = (-pA, 0, -pB). B = (gB, 0, -zD).
       const distClosed = Math.hypot(gB - (-pA), -zD - (-pB));
-
-      // Gate open (maxAngle). Gate Bracket rotated around Y.
       const bxOpen = gB * Math.cos(maxAngleRad) + (-zD) * Math.sin(maxAngleRad);
       const bzOpen = -gB * Math.sin(maxAngleRad) + (-zD) * Math.cos(maxAngleRad);
       const distOpen = Math.hypot(bxOpen - (-pA), bzOpen - (-pB));
@@ -330,11 +343,6 @@ export default function Dashboard() {
   const subOptStyle = {
     display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '22px',
     fontSize: '0.68rem', color: 'var(--text-muted)',
-  };
-
-  const smallInputStyle = {
-    width: '52px', fontSize: '0.7rem', padding: '2px 4px',
-    border: '1px solid var(--border-color)', borderRadius: '3px',
   };
 
   const renderPanelList = (side, leaf) => (
@@ -389,7 +397,6 @@ export default function Dashboard() {
         </button>
       )}
 
-      {/* ——— Linear Actuator ——— */}
       <label style={{
         display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px',
         fontSize: '0.7rem', color: 'var(--text-muted)', cursor: 'pointer',
@@ -444,127 +451,193 @@ export default function Dashboard() {
           <div style={{ fontWeight: 600, color: 'var(--blueprint)', letterSpacing: '1px' }}>LOADING CONFIGURATION...</div>
         </div>
       )}
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <Settings size={24} style={{ color: 'var(--blueprint)' }} />
-          <h1>GateSim Pro</h1>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
-            <button onClick={() => fileInputRef.current?.click()} title="Open config file"
-              style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '5px', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
-              <FolderOpen size={16} />
-            </button>
-            <button onClick={saveConfig} title="Save config to file"
-              style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '5px', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
-              <Save size={16} />
-            </button>
-            <button onClick={shareConfig} title="Copy publish link"
-              disabled={isSharing}
-              className={shareSuccess ? 'share-success button-pulse' : ''}
-              style={{
-                background: 'none',
-                border: '1px solid var(--border-color)',
-                borderRadius: '4px',
-                padding: '5px',
-                cursor: 'pointer',
-                color: 'var(--text-muted)',
-                display: 'flex',
-                alignItems: 'center',
-                transition: 'all 0.2s',
-                opacity: isSharing ? 0.5 : 1
-              }}>
-              {isSharing ? <Loader2 size={16} className="button-pulse" /> : <Share2 size={16} />}
-            </button>
-          </div>
-          <input ref={fileInputRef} type="file" accept=".gatesim,.json" onChange={openConfig}
-            style={{ display: 'none' }} />
-        </div>
 
-        {isReadOnly && (
-          <div style={{ padding: '0.75rem 1.5rem', background: 'rgba(176, 137, 104, 0.1)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Shield size={16} style={{ color: 'var(--accent)' }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent)' }}>VIEW ONLY MODE</div>
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Configuration is locked by the shared link.</div>
+      {!isReadOnly && (
+        <aside className="sidebar">
+          <div className="sidebar-header">
+            <Settings size={24} style={{ color: 'var(--blueprint)' }} />
+            <h1>GateSim Pro</h1>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
+              <button onClick={() => fileInputRef.current?.click()} title="Open config file"
+                style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '5px', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                <FolderOpen size={16} />
+              </button>
+              <button onClick={saveConfig} title="Save config to file"
+                style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '5px', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                <Save size={16} />
+              </button>
+              <button onClick={shareConfig} title="Copy publish link"
+                disabled={isSharing}
+                className={shareSuccess ? 'share-success button-pulse' : ''}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  padding: '5px',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  transition: 'all 0.2s',
+                  opacity: isSharing ? 0.5 : 1
+                }}>
+                {isSharing ? <Loader2 size={16} className="button-pulse" /> : <Share2 size={16} />}
+              </button>
             </div>
-            <button onClick={exitReadOnly} style={{ background: 'none', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: '0.6rem', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer' }}>Edit</button>
-          </div>
-        )}
-
-        <div className="sidebar-section">
-          <h2><Sliders size={16} /> Operation</h2>
-          <div className="input-group">
-            <label>
-              <span>Open %</span>
-              <span style={{ color: 'var(--accent)', fontFamily: 'monospace' }}>{openPercent}%</span>
-            </label>
-            <input type="range" min="0" max="100" value={openPercent} onChange={(e) => setOpenPercent(Number(e.target.value))} />
-          </div>
-        </div>
-
-        <div className="sidebar-section">
-          <h2>Geometry</h2>
-          <div className="input-group" style={{ opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
-            <label>Total Width (mm)</label>
-            <input type="number" name="totalWidth" value={pendingConfig.totalWidth} onChange={handleTopChange} step="100" />
-          </div>
-          <div className="input-group" style={{ opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
-            <label>Gate Height (mm)</label>
-            <input type="number" name="height" value={pendingConfig.height} onChange={handleTopChange} step="100" />
-          </div>
-          <div className="input-group" style={{ opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
-            <label>
-              <span>Width Split</span>
-              <span>{Math.round(pendingConfig.splitRatio * 100)}% / {Math.round((1 - pendingConfig.splitRatio) * 100)}%</span>
-            </label>
-            <input type="range" min="0.1" max="0.9" step="0.05" name="splitRatio" value={pendingConfig.splitRatio} onChange={handleTopChange} />
+            <input ref={fileInputRef} type="file" accept=".gatesim,.json" onChange={openConfig}
+              style={{ display: 'none' }} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '0.75rem', opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
-            <div className="side-card">
-              <span className="side-tag">Left Leaf</span>
-              {renderPanelList('left', pendingConfig.left)}
-            </div>
-            <div className="side-card">
-              <span className="side-tag">Right Leaf</span>
-              {renderPanelList('right', pendingConfig.right)}
+          <div className="sidebar-section">
+            <h2><Sliders size={16} /> Operation</h2>
+            <div className="input-group">
+              <label>
+                <span>Open %</span>
+                <span style={{ color: 'var(--accent)', fontFamily: 'monospace' }}>{openPercent}%</span>
+              </label>
+              <input type="range" min="0" max="100" value={openPercent} onChange={(e) => setOpenPercent(Number(e.target.value))} />
             </div>
           </div>
-        </div>
 
-        <div className="sidebar-section ai-recommended">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--blueprint)', marginBottom: '0.75rem' }}>
-            <Zap size={16} fill="currentColor" />
-            <h2 style={{ margin: 0, color: 'inherit', fontSize: '0.85rem' }}>Specs</h2>
-          </div>
-          <div className="ai-report">
-            {renderActuatorSpecs(actuatorSpecs.left, 'Left')}
-            {renderActuatorSpecs(actuatorSpecs.right, 'Right')}
-            {!actuatorSpecs.left && !actuatorSpecs.right && (
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Enable an actuator on a leaf to see specs
+          <div className="sidebar-section">
+            <h2>Geometry</h2>
+            <div className="input-group">
+              <label>Total Width (mm)</label>
+              <input type="number" name="totalWidth" value={pendingConfig.totalWidth} onChange={handleTopChange} step="100" />
+            </div>
+            <div className="input-group">
+              <label>Gate Height (mm)</label>
+              <input type="number" name="height" value={pendingConfig.height} onChange={handleTopChange} step="100" />
+            </div>
+            <div className="input-group">
+              <label>
+                <span>Width Split</span>
+                <span>{Math.round(pendingConfig.splitRatio * 100)}% / {Math.round((1 - pendingConfig.splitRatio) * 100)}%</span>
+              </label>
+              <input type="range" min="0.1" max="0.9" step="0.05" name="splitRatio" value={pendingConfig.splitRatio} onChange={handleTopChange} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '0.75rem' }}>
+              <div className="side-card">
+                <span className="side-tag">Left Leaf</span>
+                {renderPanelList('left', pendingConfig.left)}
               </div>
-            )}
+              <div className="side-card">
+                <span className="side-tag">Right Leaf</span>
+                {renderPanelList('right', pendingConfig.right)}
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div style={{ padding: '1.25rem', marginTop: 'auto', borderTop: '1px solid var(--border-color)', background: '#fff', display: 'flex', gap: '8px', opacity: isReadOnly ? 0.6 : 1, pointerEvents: isReadOnly ? 'none' : 'auto' }}>
-          <button onClick={handleApply} disabled={!isDirty || isReadOnly} className="export-btn"
-            style={{ flex: 1, backgroundColor: (isDirty && !isReadOnly) ? 'var(--success)' : 'var(--border-color)', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <Check size={18} /> Apply
-          </button>
-          <button className="export-btn" onClick={() => setShowModal(true)}
-            style={{ flex: 1, margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <FileText size={16} /> Export
-          </button>
-        </div>
-      </aside>
+          <div className="sidebar-section ai-recommended">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--blueprint)', marginBottom: '0.75rem' }}>
+              <Zap size={16} fill="currentColor" />
+              <h2 style={{ margin: 0, color: 'inherit', fontSize: '0.85rem' }}>Specs</h2>
+            </div>
+            <div className="ai-report">
+              {renderActuatorSpecs(actuatorSpecs.left, 'Left')}
+              {renderActuatorSpecs(actuatorSpecs.right, 'Right')}
+              {!actuatorSpecs.left && !actuatorSpecs.right && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  Enable an actuator on a leaf to see specs
+                </div>
+              )}
+            </div>
+          </div>
 
-      <main className="main-content">
+          <div style={{ padding: '1.25rem', marginTop: 'auto', borderTop: '1px solid var(--border-color)', background: '#fff', display: 'flex', gap: '8px' }}>
+            <button onClick={handleApply} disabled={!isDirty} className="export-btn"
+              style={{ flex: 1, backgroundColor: isDirty ? 'var(--success)' : 'var(--border-color)', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <Check size={18} /> Apply
+            </button>
+            <button className="export-btn" onClick={() => setShowModal(true)}
+              style={{ flex: 1, margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <FileText size={16} /> Export
+            </button>
+          </div>
+        </aside>
+      )}
+
+      <main className="main-content" style={{ paddingLeft: isReadOnly ? 0 : 'var(--sidebar-width)' }}>
         <div className="canvas-container">
           <GateSim openPercent={openPercent} config={config}
             motor={{ aOffset: 150, bOffset: 150 }} overloaded={false} />
         </div>
+
+        {isReadOnly && (
+          <div style={{
+            position: 'absolute', bottom: '30px', left: '50%', transform: 'translateX(-50%)',
+            width: '90%', maxWidth: '600px', background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(10px)', borderRadius: '16px', padding: '20px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)', border: '1px solid rgba(0,0,0,0.05)',
+            display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 100
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <button
+                onClick={() => setIsPlaying(!isPlaying)}
+                style={{
+                  width: '44px', height: '44px', borderRadius: '50%',
+                  backgroundColor: 'var(--blueprint)', color: 'white',
+                  border: 'none', cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center'
+                }}
+              >
+                {isPlaying ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+              </button>
+
+              <button
+                onClick={() => { setOpenPercent(0); setIsPlaying(false); }}
+                style={{
+                  width: '40px', height: '40px', borderRadius: '50%',
+                  backgroundColor: 'white', color: 'var(--text-muted)',
+                  border: '1px solid var(--border-color)', cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center'
+                }}
+              >
+                <RotateCcw size={18} />
+              </button>
+
+              <div style={{ flex: 1, position: 'relative' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--blueprint)', letterSpacing: '1px' }}>
+                    {openPercent === 100 ? 'OPENED' : openPercent === 0 ? 'CLOSED' : isPlaying ? 'OPERATING...' : 'PAUSED'}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)' }}>{openPercent}%</span>
+                </div>
+                <input
+                  type="range" min="0" max="100" value={openPercent}
+                  onChange={(e) => {
+                    setOpenPercent(Number(e.target.value));
+                    setIsPlaying(false);
+                  }}
+                  style={{ width: '100%', accentColor: 'var(--blueprint)', height: '6px', cursor: 'pointer' }}
+                />
+              </div>
+
+              <button
+                onClick={exitReadOnly}
+                style={{
+                  padding: '8px 16px', borderRadius: '8px',
+                  backgroundColor: 'white', color: 'var(--text-muted)',
+                  border: '1px solid var(--border-color)', cursor: 'pointer',
+                  fontSize: '0.75rem', fontWeight: 600
+                }}
+              >
+                EDIT
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', fontSize: '0.65rem', color: 'var(--text-muted)', borderTop: '1px solid #f0f0f0', paddingTop: '10px' }}>
+              <span style={{ color: 'var(--accent)', fontWeight: 700 }}>PREVIEW MODE</span>
+              <span>•</span>
+              <span>{Math.round(config.totalWidth / 1000)}m x {Math.round(config.height / 1000)}m</span>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* Legacy Modals */}
+      {showModal && <div className="modal-backdrop visible" onClick={() => setShowModal(false)} />}
     </div>
   );
 }
