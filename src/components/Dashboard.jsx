@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [isPlaying, setIsPlaying] = useState(false);
   const playTimerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const gateSimRef = useRef();
 
   // Load state on mount: URL (Database ID or Base64) takes priority, then LocalStorage
   useEffect(() => {
@@ -191,6 +192,103 @@ export default function Dashboard() {
       alert(`Could not save to database: ${detailed}`);
     } finally {
       setIsSharing(false);
+    }
+  };
+
+  const exportTechnicalDrawing = async () => {
+    if (!gateSimRef.current) return;
+    setIsLoading(true);
+    try {
+      // Small delay to ensure any layout changes settle
+      await new Promise(r => setTimeout(r, 100));
+
+      const snapshots = await Promise.all([
+        gateSimRef.current.getSnapshot('top'),
+        gateSimRef.current.getSnapshot('front'),
+        gateSimRef.current.getSnapshot('side'),
+        gateSimRef.current.getSnapshot('iso')
+      ]);
+
+      const [top, front, side, iso] = snapshots;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 2400;
+      canvas.height = 1600;
+      const ctx = canvas.getContext('2d');
+
+      // 1. Background (Technical look: light grey/white)
+      ctx.fillStyle = '#f8f9fa';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 2. Load and Draw Images
+      const loadImage = (url) => new Promise(res => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => res(img);
+        img.src = url;
+      });
+
+      const images = await Promise.all(snapshots.map(s => loadImage(s)));
+      const cellW = canvas.width / 2;
+      const cellH = (canvas.height - 200) / 2; // Reserve bottom for title block
+
+      // Layout: Top (TL), Iso (TR), Front (BL), Side (BR)
+      ctx.drawImage(images[0], 0, 0, cellW, cellH);
+      ctx.drawImage(images[3], cellW, 0, cellW, cellH);
+      ctx.drawImage(images[1], 0, cellH, cellW, cellH);
+      ctx.drawImage(images[2], cellW, cellH, cellW, cellH);
+
+      // 3. Grid Lines
+      ctx.strokeStyle = '#dee2e6';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cellW, 0); ctx.lineTo(cellW, canvas.height - 200);
+      ctx.moveTo(0, cellH); ctx.lineTo(canvas.width, cellH);
+      ctx.stroke();
+
+      // 4. Labels for each view
+      ctx.fillStyle = '#495057';
+      ctx.font = 'bold 24px Inter, sans-serif';
+      ctx.fillText('TOP VIEW (PLAN)', 30, 40);
+      ctx.fillText('PERSPECTIVE (3D)', cellW + 30, 40);
+      ctx.fillText('FRONT ELEVATION', 30, cellH + 40);
+      ctx.fillText('SIDE ELEVATION', cellW + 30, cellH + 40);
+
+      // 5. Title Block (Bottom)
+      const ty = canvas.height - 200;
+      ctx.fillStyle = '#212529';
+      ctx.fillRect(0, ty, canvas.width, 200);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 48px Inter, sans-serif';
+      ctx.fillText('ESCHER GATE SIMULATOR - TECHNICAL SPECIFICATION', 50, ty + 80);
+
+      ctx.font = '24px Inter, sans-serif';
+      ctx.fillStyle = '#adb5bd';
+      const date = new Date().toLocaleDateString();
+      const dims = `${config.totalWidth}mm x ${config.height}mm`;
+      const id = new URLSearchParams(window.location.search).get('id')?.slice(0, 12) || 'LOCAL_DESIGN';
+
+      ctx.fillText(`PROJECT ID: ${id}`, 50, ty + 130);
+      ctx.fillText(`DIMENSIONS: ${dims}`, 50, ty + 165);
+      ctx.fillText(`DATE: ${date}`, canvas.width - 300, ty + 165);
+
+      // Branding
+      ctx.font = 'italic bold 32px Inter, sans-serif';
+      ctx.fillStyle = '#c97c5d'; // Blueprint color
+      ctx.fillText('GATESIM PRO', canvas.width - 300, ty + 80);
+
+      // 6. Download
+      const link = document.createElement('a');
+      link.download = `GateSim-Drawing-${id}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+    } catch (e) {
+      console.error('Export failed', e);
+      alert('Drawing export failed. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -547,7 +645,7 @@ export default function Dashboard() {
               style={{ flex: 1, backgroundColor: isDirty ? 'var(--success)' : 'var(--border-color)', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               <Check size={18} /> Apply
             </button>
-            <button className="export-btn" onClick={() => setShowModal(true)}
+            <button className="export-btn" onClick={exportTechnicalDrawing}
               style={{ flex: 1, margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               <FileText size={16} /> Export
             </button>
@@ -557,7 +655,7 @@ export default function Dashboard() {
 
       <main className="main-content" style={{ paddingLeft: isReadOnly ? 0 : 'var(--sidebar-width)', width: '100%', height: '100%', position: 'relative' }}>
         <div className="canvas-container" style={{ width: '100%', height: '100%' }}>
-          <GateSim openPercent={openPercent} config={config}
+          <GateSim ref={gateSimRef} openPercent={openPercent} config={config}
             motor={{ aOffset: 150, bOffset: 150 }} overloaded={false} />
         </div>
 
@@ -609,6 +707,19 @@ export default function Dashboard() {
                   style={{ width: '100%', accentColor: 'var(--blueprint)', height: '6px', cursor: 'pointer' }}
                 />
               </div>
+
+              <button
+                onClick={exportTechnicalDrawing}
+                title="Download Drawing"
+                style={{
+                  width: '40px', height: '40px', borderRadius: '50%',
+                  backgroundColor: 'white', color: 'var(--accent)',
+                  border: '1px solid var(--border-color)', cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center'
+                }}
+              >
+                <FileText size={20} />
+              </button>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', fontSize: '0.65rem', color: 'var(--text-muted)', borderTop: '1px solid #f0f0f0', paddingTop: '10px' }}>

@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useState } from 'react';
+import React, { useRef, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment, GizmoHelper, GizmoViewport, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -591,6 +591,45 @@ function CamPreset({ ctrlRef, gateRef, cmd }) {
     return null;
 }
 
+/* ————— Export Handler ————— */
+function ViewExporter({ gateRef, exportRef }) {
+    const { gl, camera, size } = useThree();
+
+    useImperativeHandle(exportRef, () => ({
+        async getSnapshot(view) {
+            if (!gateRef.current) return null;
+
+            const box = new THREE.Box3().setFromObject(gateRef.current);
+            const c = box.getCenter(new THREE.Vector3());
+            const s = box.getSize(new THREE.Vector3());
+            const aspect = size.width / size.height;
+            let d = (Math.max(s.x, s.y, s.z) / 2) / Math.tan((camera.fov * Math.PI / 180) / 2) * 1.8;
+            if (aspect < 1) d = d / aspect;
+
+            const originalPos = camera.position.clone();
+            const originalRot = camera.rotation.clone();
+
+            // Snap camera to target view
+            if (view === 'top') camera.position.set(c.x, c.y + d, c.z + 0.01);
+            else if (view === 'side') camera.position.set(c.x + d, c.y, c.z);
+            else if (view === 'front') camera.position.set(c.x, c.y, c.z + d);
+            else camera.position.set(c.x + d * 0.7, c.y + d * 0.6, c.z + d * 0.7); // iso
+
+            camera.lookAt(c);
+            gl.render(gl.scene, camera);
+
+            const data = gl.domElement.toDataURL('image/png');
+
+            // Restore
+            camera.position.copy(originalPos);
+            camera.rotation.copy(originalRot);
+
+            return data;
+        }
+    }));
+    return null;
+}
+
 /* ————— HUD ————— */
 function Hud({ onFit, onFront, onTop, onRight, onIso }) {
     const s = {
@@ -613,7 +652,7 @@ function Hud({ onFit, onFront, onTop, onRight, onIso }) {
 }
 
 /* ————— Main Export ————— */
-export default function GateSim({ openPercent, config, motor, overloaded }) {
+const GateSim = forwardRef(({ openPercent, config, motor, overloaded }, ref) => {
     const ctrlRef = useRef();
     const gateRef = useRef();
     const [fitT, setFitT] = useState(0);
@@ -622,11 +661,10 @@ export default function GateSim({ openPercent, config, motor, overloaded }) {
 
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-            <Canvas shadows camera={{ position: [0, camY + 2, 6], fov: 40, near: 0.01, far: 500 }}
+            <Canvas shadows gl={{ preserveDrawingBuffer: true }} camera={{ position: [0, camY + 2, 6], fov: 40, near: 0.01, far: 500 }}
                 style={{ background: 'linear-gradient(180deg, #2b2b2b 0%, #1a1a1a 100%)' }}>
                 <ambientLight intensity={0.4} />
                 <directionalLight position={[5, 8, 5]} intensity={1.2} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} />
-                <directionalLight position={[-4, 3, -2]} intensity={0.3} color="#b0c4de" />
                 <pointLight position={[0, 6, 0]} intensity={0.3} />
                 <GateAssembly openPercent={openPercent} config={config} motor={motor} overloaded={overloaded} groupRef={gateRef} />
                 <Grid infiniteGrid cellSize={0.25} sectionSize={1} sectionColor="#555" cellColor="#333" fadeDistance={30} fadeStrength={1.5} />
@@ -635,6 +673,7 @@ export default function GateSim({ openPercent, config, motor, overloaded }) {
                 </GizmoHelper>
                 <CamFit ctrlRef={ctrlRef} gateRef={gateRef} trigger={fitT} />
                 <CamPreset ctrlRef={ctrlRef} gateRef={gateRef} cmd={viewCmd} />
+                <ViewExporter gateRef={gateRef} exportRef={ref} />
                 <OrbitControls ref={ctrlRef} minPolarAngle={0} maxPolarAngle={Math.PI / 2 + 0.1} target={[0, camY, 0]}
                     enableDamping dampingFactor={0.08} rotateSpeed={0.7} panSpeed={0.8} zoomSpeed={1.2} />
             </Canvas>
@@ -646,4 +685,6 @@ export default function GateSim({ openPercent, config, motor, overloaded }) {
             </div>
         </div>
     );
-}
+});
+
+export default GateSim;
