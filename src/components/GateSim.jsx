@@ -593,34 +593,65 @@ function CamPreset({ ctrlRef, gateRef, cmd }) {
 
 /* ————— Export Handler ————— */
 function ViewExporter({ gateRef, exportRef }) {
-    const { gl, camera, size } = useThree();
+    const { gl, camera, scene, size } = useThree();
 
     useImperativeHandle(exportRef, () => ({
         async getSnapshot(view) {
             if (!gateRef.current) return null;
 
-            const box = new THREE.Box3().setFromObject(gateRef.current);
+            // Compute bounding box only from meshes (CSS2D Html overlays inflate the box)
+            const box = new THREE.Box3();
+            gateRef.current.traverse((obj) => {
+                if (obj.isMesh) {
+                    box.expandByObject(obj);
+                }
+            });
+            if (box.isEmpty()) box.setFromObject(gateRef.current);
+
             const c = box.getCenter(new THREE.Vector3());
             const s = box.getSize(new THREE.Vector3());
+
+            const fovRad = (camera.fov * Math.PI) / 180;
             const aspect = size.width / size.height;
-            let d = (Math.max(s.x, s.y, s.z) / 2) / Math.tan((camera.fov * Math.PI / 180) / 2) * 1.8;
-            if (aspect < 1) d = d / aspect;
+            const hFov = 2 * Math.atan(Math.tan(fovRad / 2) * aspect);
+
+            // View-specific tight framing
+            let fitW, fitH;
+            if (view === 'top') { fitW = s.x; fitH = s.z; }
+            else if (view === 'front') { fitW = s.x; fitH = s.y; }
+            else if (view === 'side') { fitW = s.z; fitH = s.y; }
+            else { const diag = Math.sqrt(s.x * s.x + s.z * s.z); fitW = diag; fitH = s.y + diag * 0.3; }
+
+            const dV = (fitH / 2) / Math.tan(fovRad / 2);
+            const dH = (fitW / 2) / Math.tan(hFov / 2);
+            const d = Math.max(dV, dH) * 1.15; // tight 15% padding
 
             const originalPos = camera.position.clone();
             const originalRot = camera.rotation.clone();
+
+            // Hide Html overlays (CSS2DObjects) during snapshot
+            const hiddenObjects = [];
+            scene.traverse((obj) => {
+                if (obj.isCSS2DObject && obj.visible) {
+                    obj.visible = false;
+                    hiddenObjects.push(obj);
+                }
+            });
 
             // Snap camera to target view
             if (view === 'top') camera.position.set(c.x, c.y + d, c.z + 0.01);
             else if (view === 'side') camera.position.set(c.x + d, c.y, c.z);
             else if (view === 'front') camera.position.set(c.x, c.y, c.z + d);
-            else camera.position.set(c.x + d * 0.7, c.y + d * 0.6, c.z + d * 0.7); // iso
+            else camera.position.set(c.x + d * 0.7, c.y + d * 0.6, c.z + d * 0.7);
 
             camera.lookAt(c);
-            gl.render(gl.scene, camera);
+            camera.updateMatrixWorld();
+            gl.render(scene, camera);
 
             const data = gl.domElement.toDataURL('image/png');
 
             // Restore
+            hiddenObjects.forEach((obj) => { obj.visible = true; });
             camera.position.copy(originalPos);
             camera.rotation.copy(originalRot);
 

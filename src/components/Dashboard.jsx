@@ -197,92 +197,141 @@ export default function Dashboard() {
 
   const exportTechnicalDrawing = async () => {
     if (!gateSimRef.current) return;
+
+    // Determine filename
+    const id = new URLSearchParams(window.location.search).get('id')?.slice(0, 12) || 'LOCAL_DESIGN';
+    const filename = `GateSim-Drawing-${id}.png`;
+
+    // Secure file handle IMMEDIATELY while user activation is still fresh
+    let fileHandle = null;
+    if (window.showSaveFilePicker) {
+      try {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }],
+        });
+      } catch (e) {
+        if (e.name === 'AbortError') return; // User cancelled the dialog
+      }
+    }
+
     setIsLoading(true);
     try {
-      // Small delay to ensure any layout changes settle
-      await new Promise(r => setTimeout(r, 100));
+      const savedPercent = openPercent;
+      const displayPercent = savedPercent > 0 ? savedPercent : 100;
 
-      const snapshots = await Promise.all([
-        gateSimRef.current.getSnapshot('top'),
-        gateSimRef.current.getSnapshot('front'),
-        gateSimRef.current.getSnapshot('side'),
-        gateSimRef.current.getSnapshot('iso')
-      ]);
+      // --- Closed State Snapshots (0%) ---
+      setOpenPercent(0);
+      await new Promise(r => setTimeout(r, 350));
+      const closedFront = await gateSimRef.current.getSnapshot('front');
+      const closedTop = await gateSimRef.current.getSnapshot('top');
 
-      const [top, front, side, iso] = snapshots;
+      // --- Open State Snapshots ---
+      setOpenPercent(displayPercent);
+      await new Promise(r => setTimeout(r, 350));
+      const openFront = await gateSimRef.current.getSnapshot('front');
+      const openIso = await gateSimRef.current.getSnapshot('iso');
+
+      // Restore original percentage
+      setOpenPercent(savedPercent);
 
       const canvas = document.createElement('canvas');
       canvas.width = 2400;
-      canvas.height = 1600;
+      canvas.height = 1800;
       const ctx = canvas.getContext('2d');
 
-      // 1. Background (Technical look: light grey/white)
+      // Background
       ctx.fillStyle = '#f8f9fa';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 2. Load and Draw Images
-      const loadImage = (url) => new Promise(res => {
+      const loadImage = (url) => new Promise((res, rej) => {
         const img = new Image();
-        img.crossOrigin = "anonymous";
         img.onload = () => res(img);
+        img.onerror = rej;
         img.src = url;
       });
 
-      const images = await Promise.all(snapshots.map(s => loadImage(s)));
+      const images = await Promise.all([
+        loadImage(closedFront),
+        loadImage(closedTop),
+        loadImage(openFront),
+        loadImage(openIso),
+      ]);
+
+      const titleBlockH = 180;
+      const labelH = 48;
       const cellW = canvas.width / 2;
-      const cellH = (canvas.height - 200) / 2; // Reserve bottom for title block
+      const cellH = (canvas.height - titleBlockH) / 2;
 
-      // Layout: Top (TL), Iso (TR), Front (BL), Side (BR)
-      ctx.drawImage(images[0], 0, 0, cellW, cellH);
-      ctx.drawImage(images[3], cellW, 0, cellW, cellH);
-      ctx.drawImage(images[1], 0, cellH, cellW, cellH);
-      ctx.drawImage(images[2], cellW, cellH, cellW, cellH);
+      // Draw snapshot images in 2×2 grid
+      ctx.drawImage(images[0], 0, labelH, cellW, cellH - labelH);
+      ctx.drawImage(images[2], cellW, labelH, cellW, cellH - labelH);
+      ctx.drawImage(images[1], 0, cellH + labelH, cellW, cellH - labelH);
+      ctx.drawImage(images[3], cellW, cellH + labelH, cellW, cellH - labelH);
 
-      // 3. Grid Lines
+      // Grid lines
       ctx.strokeStyle = '#dee2e6';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(cellW, 0); ctx.lineTo(cellW, canvas.height - 200);
+      ctx.moveTo(cellW, 0); ctx.lineTo(cellW, canvas.height - titleBlockH);
       ctx.moveTo(0, cellH); ctx.lineTo(canvas.width, cellH);
       ctx.stroke();
 
-      // 4. Labels for each view
+      // View labels
       ctx.fillStyle = '#495057';
-      ctx.font = 'bold 24px Inter, sans-serif';
-      ctx.fillText('TOP VIEW (PLAN)', 30, 40);
-      ctx.fillText('PERSPECTIVE (3D)', cellW + 30, 40);
-      ctx.fillText('FRONT ELEVATION', 30, cellH + 40);
-      ctx.fillText('SIDE ELEVATION', cellW + 30, cellH + 40);
+      ctx.font = 'bold 22px Inter, sans-serif';
+      ctx.fillText('FRONT ELEVATION — CLOSED (0%)', 30, 32);
+      ctx.fillText(`FRONT ELEVATION — OPEN (${displayPercent}%)`, cellW + 30, 32);
+      ctx.fillText('TOP VIEW (PLAN) — CLOSED (0%)', 30, cellH + 32);
+      ctx.fillText(`PERSPECTIVE (3D) — OPEN (${displayPercent}%)`, cellW + 30, cellH + 32);
 
-      // 5. Title Block (Bottom)
-      const ty = canvas.height - 200;
+      // Title block
+      const ty = canvas.height - titleBlockH;
       ctx.fillStyle = '#212529';
-      ctx.fillRect(0, ty, canvas.width, 200);
+      ctx.fillRect(0, ty, canvas.width, titleBlockH);
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 48px Inter, sans-serif';
-      ctx.fillText('ESCHER GATE SIMULATOR - TECHNICAL SPECIFICATION', 50, ty + 80);
+      ctx.font = 'bold 40px Inter, sans-serif';
+      ctx.fillText('ESCHER GATE SIMULATOR — TECHNICAL SPECIFICATION', 50, ty + 60);
 
-      ctx.font = '24px Inter, sans-serif';
+      ctx.font = '22px Inter, sans-serif';
       ctx.fillStyle = '#adb5bd';
       const date = new Date().toLocaleDateString();
-      const dims = `${config.totalWidth}mm x ${config.height}mm`;
-      const id = new URLSearchParams(window.location.search).get('id')?.slice(0, 12) || 'LOCAL_DESIGN';
+      const dims = `${config.totalWidth}mm × ${config.height}mm`;
 
-      ctx.fillText(`PROJECT ID: ${id}`, 50, ty + 130);
-      ctx.fillText(`DIMENSIONS: ${dims}`, 50, ty + 165);
-      ctx.fillText(`DATE: ${date}`, canvas.width - 300, ty + 165);
+      ctx.fillText(`PROJECT ID: ${id}`, 50, ty + 105);
+      ctx.fillText(`DIMENSIONS: ${dims}`, 50, ty + 140);
+      ctx.fillText(`DATE: ${date}`, canvas.width - 350, ty + 140);
 
       // Branding
-      ctx.font = 'italic bold 32px Inter, sans-serif';
-      ctx.fillStyle = '#c97c5d'; // Blueprint color
-      ctx.fillText('GATESIM PRO', canvas.width - 300, ty + 80);
+      ctx.font = 'italic bold 28px Inter, sans-serif';
+      ctx.fillStyle = '#c97c5d';
+      ctx.fillText('GATESIM PRO', canvas.width - 350, ty + 60);
 
-      // 6. Download
-      const link = document.createElement('a');
-      link.download = `GateSim-Drawing-${id}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      // --- Save the PNG ---
+      const dataUrl = canvas.toDataURL('image/png');
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+
+      if (fileHandle) {
+        // File System Access API: write directly to user-chosen file
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      } else {
+        // Fallback for browsers without File System Access API
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }, 1000);
+      }
 
     } catch (e) {
       console.error('Export failed', e);
